@@ -26,9 +26,24 @@ import datetime
 import urllib.request
 import urllib.error
 
+import arrow
+
 from tconnectsync.api.tandemsource import TandemSourceApi
 
 GIST_FILENAME = "leo-pump-status.json"
+
+
+def format_event_time(ts):
+    """ts is an arrow.Arrow object already in the pump's local timezone
+    (tconnectsync attaches it). Returns a short, human string that fits the
+    small round display - e.g. "8:45 AM" for something from today, or
+    "Yest 8:45 AM" if the calendar date differs. Bolus/IOB data only ever
+    comes from a 24h window, so it's never more than a day old."""
+    now_local = arrow.now(ts.tzinfo)
+    time_str = ts.format("h:mm A")
+    if ts.date() != now_local.date():
+        return f"Yest {time_str}"
+    return time_str
 
 
 def log(msg):
@@ -82,7 +97,7 @@ def extract_status(events):
     if iob_events:
         latest = max(iob_events, key=lambda e: e.eventTimestamp)
         current_iob = round(float(latest.iob), 2)
-        iob_time = str(latest.eventTimestamp)
+        iob_time = format_event_time(latest.eventTimestamp)
 
     bolus_events = [
         e for e in events
@@ -93,7 +108,7 @@ def extract_status(events):
     if bolus_events:
         latest_bolus = max(bolus_events, key=lambda e: e.eventTimestamp)
         last_bolus_units = round(float(latest_bolus.insulinDelivered), 2)
-        last_bolus_time = str(latest_bolus.eventTimestamp)
+        last_bolus_time = format_event_time(latest_bolus.eventTimestamp)
 
     return {
         "iob": current_iob,

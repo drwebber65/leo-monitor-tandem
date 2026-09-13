@@ -1,0 +1,27 @@
+name: Dump Tandem pump data (diagnostic)
+
+# Manual trigger only for now, from the Actions tab ("Run workflow" button).
+# Once we know the real field names for IOB/last-bolus, this gets replaced
+# by a scheduled workflow that runs the real script automatically.
+on:
+  workflow_dispatch:
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install tconnectsync
+        run: pip install tconnectsync
+
+      - name: Run diagnostic script
+        env:
+          TCONNECT_EMAIL: ${{ secrets.TCONNECT_EMAIL }}
+          TCONNECT_PASSWORD: ${{ secrets.TCONNECT_PASSWORD }}
+        run: python dump_pump_data.py

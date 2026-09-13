@@ -60,10 +60,25 @@ try:
     # wants - confirmed straight from tconnectsync's own source. The old
     # guesses (tconnectDeviceId/guid/id) don't exist on this object at all,
     # which is why the first diagnostic run never got here.
+    #
+    # This account has MULTIPLE pumps on file (old/retired ones included) -
+    # confirmed by the second diagnostic run, which found 3 entries in
+    # "pumps", two of them last uploading months ago. pumps[0] is not
+    # reliably the active one, so pick whichever pump has the most recent
+    # lastUploadDate (falling back to maxDateOfEvents) instead.
     device_id = None
     try:
-        pumps = pumper.get("pumps")
-        if pumps:
+        pumps = pumper.get("pumps") or []
+        active = None
+        for p in pumps:
+            stamp = p.get("lastUploadDate") or p.get("maxDateOfEvents")
+            if not stamp:
+                continue
+            if active is None or stamp > active[0]:
+                active = (stamp, p)
+        if active:
+            device_id = active[1].get("assignmentId") or active[1].get("serialNumber")
+        elif pumps:
             device_id = pumps[0].get("assignmentId") or pumps[0].get("serialNumber")
     except Exception:
         pass

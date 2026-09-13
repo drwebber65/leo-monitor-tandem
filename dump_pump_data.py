@@ -55,11 +55,16 @@ try:
     max_date = datetime.datetime.utcnow()
     min_date = max_date - datetime.timedelta(hours=24)
 
+    # get_pumper()'s "pumps" list is the one that has the right id field:
+    # each pump's "assignmentId" (a UUID) is what pump_events() actually
+    # wants - confirmed straight from tconnectsync's own source. The old
+    # guesses (tconnectDeviceId/guid/id) don't exist on this object at all,
+    # which is why the first diagnostic run never got here.
     device_id = None
     try:
-        pumps = info.get("pumps") or pumper.get("pumps")
+        pumps = pumper.get("pumps")
         if pumps:
-            device_id = pumps[0].get("tconnectDeviceId") or pumps[0].get("guid") or pumps[0].get("id")
+            device_id = pumps[0].get("assignmentId") or pumps[0].get("serialNumber")
     except Exception:
         pass
 
@@ -68,9 +73,31 @@ try:
         events = list(api.pump_events(device_id, min_date, max_date, True))
         print(f"Got {len(events)} events. Printing the last 20:")
         for e in events[-20:]:
-            print(json.dumps(e, indent=2, default=str))
+            print(json.dumps(e.todict(), indent=2, default=str))
+
+        print("\n--- Most recent event carrying an iob value (current IOB) ---")
+        iob_events = [e for e in events if hasattr(e, "iob") and e.iob is not None]
+        if iob_events:
+            latest_iob_event = max(iob_events, key=lambda e: e.eventTimestamp)
+            print(json.dumps(latest_iob_event.todict(), indent=2, default=str))
+        else:
+            print("No events in this window carried an iob value.")
+
+        print("\n--- Most recent completed bolus (last bolus amount/time) ---")
+        bolus_events = [
+            e for e in events
+            if type(e).__name__ == "LidBolusCompleted" and getattr(e, "completionStatusRaw", None) == 3
+        ]
+        if bolus_events:
+            latest_bolus = max(bolus_events, key=lambda e: e.eventTimestamp)
+            print(json.dumps(latest_bolus.todict(), indent=2, default=str))
+        else:
+            print("No completed boluses in this window.")
     else:
-        print("Could not automatically determine a device id from the info above - look at the pumper_info()/get_pumper() output for the right field (likely something like tconnectDeviceId, guid, or serialNumber) and we'll hardcode it in the next version.")
+        print("Could not automatically determine a device id from the info above - "
+              "look at the pumper_info()/get_pumper() output for the right field "
+              "(likely something like assignmentId or serialNumber) and "
+              "we'll hardcode it in the next version.")
 except Exception as e:
     print(f"pump_events() failed: {e}")
 

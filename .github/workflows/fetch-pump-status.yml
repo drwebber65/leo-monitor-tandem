@@ -1,0 +1,30 @@
+name: Fetch Tandem pump status
+
+# Runs every 5 minutes (matching the Dexcom polling cadence on the display)
+# and can also be triggered manually from the Actions tab for testing.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install tconnectsync
+        run: pip install tconnectsync
+
+      - name: Fetch pump status and publish to Gist
+        env:
+          TCONNECT_EMAIL: ${{ secrets.TCONNECT_EMAIL }}
+          TCONNECT_PASSWORD: ${{ secrets.TCONNECT_PASSWORD }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+        run: python fetch_pump_status.py

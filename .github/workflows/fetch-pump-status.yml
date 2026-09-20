@@ -1,10 +1,10 @@
 name: Fetch Tandem pump status
 
-# Runs every 5 minutes (matching the Dexcom polling cadence on the display)
+# Runs every 45 minutes (Tandem's own data only refreshes ~every 50 min anyway, and this keeps GitHub Actions usage well under the free tier)
 # and can also be triggered manually from the Actions tab for testing.
 on:
   schedule:
-    - cron: "*/5 * * * *"
+            - cron: "*/45 * * * *"
   workflow_dispatch:
 
 jobs:

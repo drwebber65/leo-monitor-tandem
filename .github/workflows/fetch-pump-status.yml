@@ -4,7 +4,7 @@ name: Fetch Tandem pump status
 # and can also be triggered manually from the Actions tab for testing.
 on:
   schedule:
-            - cron: "*/45 * * * *"
+    - cron: "*/45 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -17,9 +17,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
 
-      - name: Install tconnectsync
-        run: pip install tconnectsync
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
       - name: Fetch pump status and publish to Gist
         env:

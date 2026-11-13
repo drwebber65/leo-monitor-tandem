@@ -1,31 +1,37 @@
-name: Fetch Tandem pump status
+name: Fetch twiist status
 
-# Runs every 45 minutes (Tandem's own data only refreshes ~every 50 min anyway, and this keeps GitHub Actions usage well under the free tier)
-# and can also be triggered manually from the Actions tab for testing.
+# Pulls Leo's glucose + pump info (IOB, last bolus) from the twiist follower
+# service and publishes it to the Gist the kitchen and office monitors read.
+# Normally triggered by cron-job.org via workflow_dispatch; the schedule below
+# is only a backup. Keep this file name - cron-job.org calls it by name.
 on:
   schedule:
     - cron: "*/45 * * * *"
   workflow_dispatch:
 
+# Never run two at once - both would rewrite the Gist history.
+concurrency:
+  group: twiist-status
+  cancel-in-progress: false
+
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-          cache: "pip"
+          python-version: "3.12"
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Fetch pump status and publish to Gist
+      # Standard library only - no pip install needed.
+      - name: Fetch twiist status and publish to Gist
         env:
-          TCONNECT_EMAIL: ${{ secrets.TCONNECT_EMAIL }}
-          TCONNECT_PASSWORD: ${{ secrets.TCONNECT_PASSWORD }}
+          TWIIST_USERNAME: ${{ secrets.TWIIST_USERNAME }}
+          TWIIST_PASSWORD: ${{ secrets.TWIIST_PASSWORD }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
-        run: python fetch_pump_status.py
+          LOCAL_TZ: America/New_York
+        run: python fetch_twiist_status.py

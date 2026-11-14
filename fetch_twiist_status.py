@@ -291,9 +291,17 @@ def main():
         # Still publish glucose from the overview if the package call fails.
         print(f"Package fetch failed, using overview only: {e}")
         package_status = {}
+    # Merge field by field: a value missing (null) in one source doesn't
+    # wipe out a value the other source has. Package wins when both have it.
     for key in ("summary", "details", "loopAlgorithm"):
-        if package_status.get(key):
-            status[key] = package_status[key]
+        merged = dict(status.get(key) or {})
+        for k, v in (package_status.get(key) or {}).items():
+            if v is not None and v != "":
+                merged[k] = v
+        status[key] = merged
+    have = {k: sorted(kk for kk, vv in (status.get(k) or {}).items() if vv not in (None, ""))
+            for k in ("summary", "details")}
+    print(f"fields: summary={have['summary']} details={have['details']}")
 
     now = datetime.now(timezone.utc)
     previous = gist_read(gist_id, gist_token, filename)

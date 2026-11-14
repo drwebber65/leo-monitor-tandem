@@ -207,9 +207,10 @@ def gist_headers(token):
 
 # ---------- main ----------
 
-def build_status(person, details, previous, tz, now):
-    status = person.get("status") or {}
+def build_status(status, previous, tz, now):
     summary = status.get("summary") or {}
+    details = status.get("details") or {}
+    loop = status.get("loopAlgorithm") or {}
 
     glucose = num(summary.get("glucoseQuantity"))
     unit = (summary.get("glucoseUnit") or "mg/dL").lower()
@@ -237,6 +238,14 @@ def build_status(person, details, previous, tz, now):
     iob = num(details.get("activeInsulin_Units"))
     bolus_units = num(details.get("lastBolusVolume_Units"))
     bolus_time = parse_time(details.get("lastBolusDate"))
+    carbs = num(details.get("activeCarbs_grams"))
+    basal = num(summary.get("netBasal_UnitsPerHour"))
+    if basal is None:
+        basal = num(details.get("basalRate_UnitsPerHour"))
+    battery = num(summary.get("pumpBatteryLevel"))       # 0.0 - 1.0
+    reservoir = num(summary.get("pumpCassetteVolume_Units"))
+    loop_run = parse_time(loop.get("lastLoopRunDate"))
+    closed = summary.get("closedLoopEnabled")
 
     return {
         "updated": now.isoformat(timespec="seconds"),
@@ -248,6 +257,13 @@ def build_status(person, details, previous, tz, now):
         "last_bolus_units": round(bolus_units, 2) if bolus_units is not None else None,
         "last_bolus_time": short_time(bolus_time, tz) if bolus_time else "",
         "last_bolus_epoch": int(bolus_time.timestamp()) if bolus_time else None,
+        "carbs": round(carbs) if carbs is not None else None,
+        "basal": round(basal, 2) if basal is not None else None,
+        "battery_pct": round(battery * 100) if battery is not None else None,
+        "reservoir": round(reservoir) if reservoir is not None else None,
+        "loop_closed": closed if isinstance(closed, bool) else None,
+        "loop_color": summary.get("loopRingColor") or "",
+        "last_loop_epoch": int(loop_run.timestamp()) if loop_run else None,
         "history": history,
     }
 
@@ -263,23 +279,32 @@ def main():
     token = twiist_login(username, password)
     person = pick_person(twiist_get("/pwd/overviews", token), env("TWIIST_PWD_NAME"))
 
-    # IOB and last bolus live in status.details. The overview usually has
-    # only the summary, so fall back to the full package for details.
-    details = (person.get("status") or {}).get("details")
-    if not details:
-        pwd_id = str(person.get("pwdId", "")).lower()
-        package = twiist_get(f"/pwd/{pwd_id}/package", token)
-        details = (package.get("status") or {}).get("details") or {}
+    # The overview has the summary; IOB, last bolus, carbs and loop status
+    # live in the full package. Merge them, preferring the package.
+    status = dict(person.get("status") or {})
+    pwd_id = str(person.get("pwdId", "")).lower()
+    try:
+        package_status = twiist_get(f"/pwd/{pwd_id}/package", token).get("status") or {}
+    except SystemExit as e:
+        # Still publish glucose from the overview if the package call fails.
+        print(f"Package fetch failed, using overview only: {e}")
+        package_status = {}
+    for key in ("summary", "details", "loopAlgorithm"):
+        if package_status.get(key):
+            status[key] = package_status[key]
 
     now = datetime.now(timezone.utc)
     previous = gist_read(gist_id, gist_token, filename)
-    data = build_status(person, details, previous, tz, now)
+    data = build_status(status, previous, tz, now)
     gist_write(gist_id, gist_token, filename, data)
 
     age = (int(now.timestamp()) - data["glucose_epoch"]) // 60 if data["glucose_epoch"] else None
     print(f"glucose={data['glucose']} trend={data['trend']} delta={data['delta']} "
           f"age_min={age} iob={data['iob']} last_bolus={data['last_bolus_units']} "
-          f"@ {data['last_bolus_time']} history={len(data['history'])}")
+          f"@ {data['last_bolus_time']} carbs={data['carbs']} basal={data['basal']} "
+          f"battery={data['battery_pct']}% reservoir={data['reservoir']} "
+          f"loop_closed={data['loop_closed']} loop_color={data['loop_color']} "
+          f"history={len(data['history'])}")
 
 
 if __name__ == "__main__":

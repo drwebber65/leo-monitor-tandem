@@ -239,9 +239,11 @@ def build_status(status, previous, tz, now):
     bolus_units = num(details.get("lastBolusVolume_Units"))
     bolus_time = parse_time(details.get("lastBolusDate"))
     carbs = num(details.get("activeCarbs_grams"))
-    basal = num(summary.get("netBasal_UnitsPerHour"))
+    # Current basal rate (u/h). netBasal is only the difference from the
+    # scheduled rate, so it reads 0.0 most of the time - use it as fallback.
+    basal = num(details.get("basalRate_UnitsPerHour"))
     if basal is None:
-        basal = num(details.get("basalRate_UnitsPerHour"))
+        basal = num(summary.get("netBasal_UnitsPerHour"))
     battery = num(summary.get("pumpBatteryLevel"))       # 0.0 - 1.0
     reservoir = num(summary.get("pumpCassetteVolume_Units"))
     loop_run = parse_time(loop.get("lastLoopRunDate"))

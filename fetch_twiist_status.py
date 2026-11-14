@@ -266,6 +266,10 @@ def build_status(status, previous, tz, now):
         "loop_closed": closed if isinstance(closed, bool) else None,
         "loop_color": summary.get("loopRingColor") or "",
         "last_loop_epoch": int(loop_run.timestamp()) if loop_run else None,
+        # twiist's own explanation when there's no reading (e.g. signal loss)
+        # and why the loop ring is gray - shown on the monitors' NO DATA screen.
+        "glucose_message": str(details.get("glucoseMessage") or ""),
+        "gray_reason": str(details.get("ringGrayReason") or ""),
         "history": history,
     }
 
@@ -314,6 +318,7 @@ def main():
           f"@ {data['last_bolus_time']} carbs={data['carbs']} basal={data['basal']} "
           f"battery={data['battery_pct']}% reservoir={data['reservoir']} "
           f"loop_closed={data['loop_closed']} loop_color={data['loop_color']} "
+          f"glucose_message={data['glucose_message']!r} gray_reason={data['gray_reason']!r} "
           f"history={len(data['history'])}")
 
 

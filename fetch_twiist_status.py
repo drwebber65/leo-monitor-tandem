@@ -25,9 +25,11 @@ Only the Python standard library is used, so the workflow needs no pip install.
 import base64
 import json
 import os
+import struct
 import sys
 import urllib.error
 import urllib.request
+import zlib
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -51,6 +53,22 @@ TREND_MAP = {
     "fortyFiveDown": "FortyFiveDown", "↘": "FortyFiveDown",
 }
 DEXCOM_NAMES = set(TREND_MAP.values())
+
+# Blob timestamps count seconds from 2008-01-01 UTC.
+TWIIST_EPOCH = 1199145600
+
+
+def decode_blob(blob, size, fmt):
+    """Decode a twiist {"data": base64(raw deflate)} blob into fixed-size records."""
+    data = blob.get("data") if isinstance(blob, dict) else None
+    if not data:
+        return []
+    try:
+        raw = zlib.decompress(base64.b64decode(data), -15)
+    except Exception as e:
+        print(f"blob decode failed: {e}")
+        return []
+    return [struct.unpack_from(fmt, raw, i) for i in range(0, len(raw) - size + 1, size)]
 
 
 def http(method, url, headers=None, body=None, timeout=60):
@@ -219,14 +237,26 @@ def build_status(status, previous, tz, now):
     g_time = parse_time(summary.get("glucoseDate"))
     g_epoch = int(g_time.timestamp()) if g_time else None
 
+    # Full glucose history from the package blob: (unix seconds, mg/dL), oldest first.
+    blob_hist = sorted((TWIIST_EPOCH + ts, v / 100.0)
+                       for ts, v in decode_blob(status.get("glucoseHistory"), 8, "<II"))
+    if blob_hist:
+        newest = [(datetime.fromtimestamp(t, tz).strftime("%H:%M"), round(v)) for t, v in blob_hist[-3:]]
+        print(f"glucoseHistory blob: {len(blob_hist)} readings, newest {newest}")
+    # The summary sometimes leaves the glucose number out; fall back to the
+    # newest reading in the history blob.
+    if glucose is None and blob_hist:
+        g_epoch, glucose = int(blob_hist[-1][0]), blob_hist[-1][1]
+
     raw_arrow = summary.get("cgmRateArrow") or ""
     trend = TREND_MAP.get(raw_arrow) or (raw_arrow if raw_arrow in DEXCOM_NAMES else "")
 
     # History for the office graph and the delta: [[epoch, mg/dL], ...] newest first.
     history = [h for h in (previous.get("history") or [])
                if isinstance(h, list) and len(h) == 2]
-    if glucose is not None and g_epoch and (not history or history[0][0] != g_epoch):
-        history.insert(0, [g_epoch, round(glucose)])
+    history += [[int(t), round(v)] for t, v in blob_hist]
+    if glucose is not None and g_epoch:
+        history.append([g_epoch, round(glucose)])
     cutoff = int(now.timestamp()) - HISTORY_HOURS * 3600 - 600
     history = sorted({h[0]: h for h in history if h[0] >= cutoff}.values(),
                      key=lambda h: h[0], reverse=True)
@@ -236,6 +266,10 @@ def build_status(status, previous, tz, now):
         delta = history[0][1] - history[1][1]
 
     iob = num(details.get("activeInsulin_Units"))
+    if iob is None:
+        active = sorted(decode_blob(status.get("activeInsulin"), 6, "<Ih"))
+        if active:
+            iob = active[-1][1] / 100.0
     bolus_units = num(details.get("lastBolusVolume_Units"))
     bolus_time = parse_time(details.get("lastBolusDate"))
     carbs = num(details.get("activeCarbs_grams"))
@@ -303,6 +337,9 @@ def main():
             if v is not None and v != "":
                 merged[k] = v
         status[key] = merged
+    for key in ("glucoseHistory", "activeInsulin"):
+        if package_status.get(key):
+            status[key] = package_status[key]
     have = {k: sorted(kk for kk, vv in (status.get(k) or {}).items() if vv not in (None, ""))
             for k in ("summary", "details")}
     print(f"fields: summary={have['summary']} details={have['details']}")
